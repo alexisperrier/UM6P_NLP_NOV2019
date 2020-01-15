@@ -1,0 +1,2269 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Populating the interactive namespace from numpy and matplotlib\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Boring preliminaries\n",
+    "%pylab inline\n",
+    "import re\n",
+    "import math\n",
+    "import string\n",
+    "from collections import Counter\n",
+    "from __future__ import division"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "<center>\n",
+    "<h1>Statistical Natural Language Processing in Python.\n",
+    "<br><font color=blue>or</font>\n",
+    "<br>How To Do Things With Words.  And Counters.\n",
+    "<br><font color=blue>or</font>\n",
+    "<br>Everything I Needed to Know About NLP I learned From Sesame Street.\n",
+    "<br>Except Kneser-Ney Smoothing.\n",
+    "<br>The Count Didn't Cover That.\n",
+    "<br>\n",
+    "<br><img src='http://norvig.com/ipython/the-count.jpg'> \n",
+    "<br>*One, two, three, ah, ah, ah!* &mdash; The Count\n",
+    "</center>\n",
+    "<hr>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "(1) Data: Text and Words\n",
+    "========\n",
+    "\n",
+    "Before we can do things with words, we need some words.  First we need some *text*, possibly from a *file*.  Then we can break the text into words.  I happen to have a big text called [big.txt](file:///Users/pnorvig/Documents/ipynb/big.txt).  We can read it, and see how big it is (in characters):"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "6488666"
+      ]
+     },
+     "execution_count": 3,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "TEXT = open('big.txt').read()\n",
+    "len(TEXT)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "So, six million characters.\n",
+    "\n",
+    "Now let's break the text up into words (or more formal-sounding, *tokens*).  For now we'll ignore all the punctuation and numbers, and anything that is not a letter."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def tokens(text):\n",
+    "    \"List all the word tokens (consecutive letters) in a text. Normalize to lowercase.\"\n",
+    "    return re.findall('[a-z]+', text.lower()) "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['this', 'is', 'a', 'test', 'this', 'is']"
+      ]
+     },
+     "execution_count": 5,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "tokens('This is: A test, 1, 2, 3, this is.')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "1105285"
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "WORDS = tokens(TEXT)\n",
+    "len(WORDS)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "So, a million words.  Here are the first 10:\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['the', 'project', 'gutenberg', 'ebook', 'of', 'the', 'adventures', 'of', 'sherlock', 'holmes']\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(WORDS[:10])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "(2) Models: Bag of Words\n",
+    "====\n",
+    "\n",
+    "The list `WORDS` is a list of the words in the `TEXT`, but it can also serve as a *generative model* of text. We know that language is very complicated, but we can create a simplified model of language that captures part of the complexity.  In the *bag of words* model, we ignore the order of words, but maintain their frequency.  Think of it this way: take all the words from the text, and throw them into a bag.  Shake the bag, and then generating a sentence consists of pulling words out of the bag one at a time.  Chances are it won't be grammatical or sensible, but it will have words in roughly the right proportions.  Here's a function to sample an *n* word sentence from a bag of words:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def sample(bag, n=10):\n",
+    "    \"Sample a random n-word sentence from the model described by the bag of words.\"\n",
+    "    return ' '.join(random.choice(bag) for _ in range(n))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'equally reasoning in into thank that his the explain losing'"
+      ]
+     },
+     "execution_count": 10,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "sample(WORDS)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Another representation for a bag of words is a `Counter`, which is a dictionary of `{'word': count}` pairs.  For example,"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "Counter({'a': 2, 'is': 2, 'it': 1, 'test': 2, 'this': 1})"
+      ]
+     },
+     "execution_count": 11,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "Counter(tokens('Is this a test? It is a test!'))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "A `Counter` is like a `dict`, but with a few extra methods.  Let's make a `Counter` for the big list of `WORDS` and get a feel for what's there:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[('the', 80030), ('of', 40025), ('and', 38313), ('to', 28766), ('in', 22050), ('a', 21155), ('that', 12512), ('he', 12401), ('was', 11410), ('it', 10681)]\n"
+     ]
+    }
+   ],
+   "source": [
+    "COUNTS = Counter(WORDS)\n",
+    "\n",
+    "print(COUNTS.most_common(10))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "80030 the\n",
+      "83 rare\n",
+      "38313 and\n",
+      "0 neverbeforeseen\n",
+      "460 words\n"
+     ]
+    }
+   ],
+   "source": [
+    "for w in tokens('the rare and neverbeforeseen words'):\n",
+    "    print(COUNTS[w], w)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "In 1935, linguist George Zipf noted that in any big text, the *n*th most frequent word appears with a frequency of about 1/*n* of the most frequent word. He gets credit for *Zipf's Law*, even though Felix Auerbach made the same observation in 1913.  If we plot the frequency of words, most common first, on a log-log plot, they should come out as a straight line if Zipf's Law holds.  Here we see that it is a fairly close fit:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<matplotlib.figure.Figure at 0x24c9283a9e8>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "M = COUNTS['the']\n",
+    "yscale('log'); xscale('log'); title('Frequency of n-th most frequent word and 1/n line.')\n",
+    "plot([c for (w, c) in COUNTS.most_common()])\n",
+    "plot([M/i for i in range(1, len(COUNTS)+1)]);"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "(3) Task: Spelling Correction\n",
+    "========\n",
+    "\n",
+    "Given a word *w*, find the most likely correction *c* = `correct(`*w*`)`.\n",
+    "\n",
+    "**Approach:** Try all candidate words *c* that are known words that are near *w*.  Choose the most likely one.\n",
+    "\n",
+    "How to balance *near* and *likely*?\n",
+    "\n",
+    "For now, in a trivial way: always prefer nearer, but when there is a tie on nearness, use the word with the highest `WORDS` count.  Measure nearness by *edit distance*: the minimum number of deletions, transpositions, insertions, or replacements of characters. By trial and error, we determine that going out to edit distance 2 will give us reasonable results.  Then we can define `correct(`*w*`)`:\n",
+    "        \n",
+    "        \n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def correct(word):\n",
+    "    \"Find the best spelling correction for this word.\"\n",
+    "    # Prefer edit distance 0, then 1, then 2; otherwise default to word itself.\n",
+    "    candidates = (known(edits0(word)) or \n",
+    "                  known(edits1(word)) or \n",
+    "                  known(edits2(word)) or \n",
+    "                  [word])\n",
+    "    return max(candidates, key=COUNTS.get)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The functions `known` and `edits0` are easy; and `edits2` is easy if we assume we have `edits1`:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def known(words):\n",
+    "    \"Return the subset of words that are actually in the dictionary.\"\n",
+    "    return {w for w in words if w in COUNTS}\n",
+    "\n",
+    "def edits0(word): \n",
+    "    \"Return all strings that are zero edits away from word (i.e., just word itself).\"\n",
+    "    return {word}\n",
+    "\n",
+    "def edits2(word):\n",
+    "    \"Return all strings that are two edits away from this word.\"\n",
+    "    return {e2 for e1 in edits1(word) for e2 in edits1(e1)}"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now for `edits1(word)`: the set of candidate words that are one edit away. For example, given `\"wird\"`, this would include `\"weird\"` (inserting an `e`) and `\"word\"` (replacing a `i` with a `o`), and also `\"iwrd\"` (transposing `w` and `i`; then `known` can be used to filter this out of the set of final candidates). How could we get them?  One way is to *split* the original word in all possible places, each split forming a *pair* of words, `(a, b)`, before and after the place, and at each place, either delete, transpose, replace, or insert a letter:\n",
+    "\n",
+    "<table>\n",
+    "  <tr><td> pairs: <td><tt> Ø+wird <td><tt> w+ird <td><tt> wi+rd <td><tt>wir+d<td><tt>wird+Ø<td><i>Notes:</i><tt> (<i>a</i>, <i>b</i>)</tt> pair</i>\n",
+    "  <tr><td> deletions: <td><tt>Ø+ird<td><tt> w+rd<td><tt> wi+d<td><tt> wir+Ø<td><td><i>Delete first char of b</i>\n",
+    "  <tr><td> transpositions: <td><tt>Ø+iwrd<td><tt> w+rid<td><tt> wi+dr</tt><td><td><td><i>Swap first two chars of b\n",
+    "  <tr><td> replacements: <td><tt>Ø+?ird<td><tt> w+?rd<td><tt> wi+?d<td><tt> wir+?</tt><td><td><i>Replace char at start of b\n",
+    "  <tr><td> insertions: <td><tt>Ø+?+wird<td><tt> w+?+ird<td><tt> wi+?+rd<td><tt> wir+?+d<td><tt> wird+?+Ø</tt><td><i>Insert char between a and b\n",
+    "</table>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def edits1(word):\n",
+    "    \"Return all strings that are one edit away from this word.\"\n",
+    "    pairs      = splits(word)\n",
+    "    deletes    = [a+b[1:]           for (a, b) in pairs if b]\n",
+    "    transposes = [a+b[1]+b[0]+b[2:] for (a, b) in pairs if len(b) > 1]\n",
+    "    replaces   = [a+c+b[1:]         for (a, b) in pairs for c in alphabet if b]\n",
+    "    inserts    = [a+c+b             for (a, b) in pairs for c in alphabet]\n",
+    "    return set(deletes + transposes + replaces + inserts)\n",
+    "\n",
+    "def splits(word):\n",
+    "    \"Return a list of all possible (first, rest) pairs that comprise word.\"\n",
+    "    return [(word[:i], word[i:]) \n",
+    "            for i in range(len(word)+1)]\n",
+    "\n",
+    "alphabet = 'abcdefghijklmnopqrstuvwxyz'"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[('', 'wird'), ('w', 'ird'), ('wi', 'rd'), ('wir', 'd'), ('wird', '')]"
+      ]
+     },
+     "execution_count": 19,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "splits('wird')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{'wird'}\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(edits0('wird'))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 102,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "set(['wirdh', 'wirdw', 'jird', 'wiid', 'wirj', 'wiprd', 'rird', 'wkird', 'wiqrd', 'wrird', 'wisrd', 'zwird', 'wiqd', 'wizrd', 'wirs', 'wrd', 'wqird', 'tird', 'wirdp', 'wrrd', 'wzrd', 'wiad', 'nird', 'wirsd', 'wixd', 'wxird', 'lird', 'eird', 'wmird', 'wihd', 'wirp', 'lwird', 'wirzd', 'widrd', 'wxrd', 'ewird', 'wirdx', 'wirkd', 'hwird', 'wipd', 'wirnd', 'uwird', 'wirz', 'mwird', 'wjrd', 'wirjd', 'wirrd', 'wirdd', 'wsird', 'bwird', 'wcrd', 'xwird', 'wdird', 'wibrd', 'wikd', 'wiryd', 'wiord', 'gird', 'wtird', 'wbrd', 'nwird', 'wlrd', 'wgird', 'wmrd', 'wirf', 'wirg', 'wird', 'wire', 'wirb', 'wirc', 'wira', 'wkrd', 'wiro', 'wirl', 'wirm', 'iird', 'wirk', 'wirh', 'wiri', 'wirv', 'wirw', 'wirt', 'wiru', 'wirr', 'wicd', 'cird', 'wirq', 'wirqd', 'wizd', 'wirhd', 'ird', 'bird', 'wirx', 'wiry', 'wvrd', 'widr', 'wprd', 'wirad', 'wijd', 'wirxd', 'uird', 'wirdb', 'qwird', 'dird', 'wnrd', 'wjird', 'gwird', 'whrd', 'wtrd', 'woird', 'rwird', 'wurd', 'wijrd', 'witrd', 'wwrd', 'dwird', 'vwird', 'wibd', 'wiyd', 'wicrd', 'weird', 'yird', 'wiwrd', 'wirdv', 'wirdu', 'wid', 'wirds', 'wirdr', 'sird', 'wirbd', 'wirdq', 'wirdy', 'wivrd', 'wirdg', 'wirdf', 'wirde', 'wiud', 'wirdc', 'wir', 'wirda', 'wfird', 'kwird', 'wirdn', 'wirdm', 'wirdl', 'wirdk', 'wirdj', 'wiird', 'wnird', 'wiurd', 'wied', 'aird', 'wirod', 'wpird', 'wcird', 'wzird', 'jwird', 'wirdo', 'wsrd', 'wimd', 'wirwd', 'mird', 'fird', 'wuird', 'wirdt', 'wired', 'wirgd', 'wirfd', 'witd', 'wfrd', 'wyrd', 'wihrd', 'zird', 'ward', 'wilrd', 'widd', 'iwrd', 'hird', 'word', 'wisd', 'wvird', 'pird', 'wlird', 'wyird', 'wdrd', 'werd', 'wild', 'oird', 'wirid', 'wgrd', 'wirvd', 'wiod', 'wirud', 'wircd', 'wiyrd', 'wigrd', 'wixrd', 'wiard', 'vird', 'wiwd', 'wigd', 'wirmd', 'swird', 'wierd', 'xird', 'qird', 'waird', 'wqrd', 'kird', 'cwird', 'wirtd', 'wirdz', 'awird', 'fwird', 'wirpd', 'wifrd', 'pwird', 'owird', 'wivd', 'wimrd', 'iwird', 'winrd', 'wirdi', 'wrid', 'wifd', 'wirld', 'wwird', 'ywird', 'wirn', 'wbird', 'whird', 'wikrd', 'wind', 'twird'])\n"
+     ]
+    }
+   ],
+   "source": [
+    "print edits1('wird')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "24254\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(len(edits2('wird')))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "spelling\n",
+      "errors\n",
+      "in\n",
+      "something\n",
+      "whatever\n",
+      "unusual\n",
+      "mistakes\n",
+      "everywhere\n"
+     ]
+    }
+   ],
+   "source": [
+    "for c in map(correct, tokens('Speling errurs in somethink. Whutever; unusuel misteakes everyware?')):\n",
+    "    print(c)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Can we make the output prettier than that?"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def correct_text(text):\n",
+    "    \"Correct all the words within a text, returning the corrected text.\"\n",
+    "    return re.sub('[a-zA-Z]+', correct_match, text)\n",
+    "\n",
+    "def correct_match(match):\n",
+    "    \"Spell-correct word in match, and preserve proper upper/lower/title case.\"\n",
+    "    word = match.group()\n",
+    "    return case_of(word)(correct(word.lower()))\n",
+    "\n",
+    "def case_of(text):\n",
+    "    \"Return the case-function appropriate for text: upper, lower, title, or just str.\"\n",
+    "    return (str.upper if text.isupper() else\n",
+    "            str.lower if text.islower() else\n",
+    "            str.title if text.istitle() else\n",
+    "            str)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<method 'upper' of 'str' objects>\n",
+      "<method 'lower' of 'str' objects>\n",
+      "<method 'title' of 'str' objects>\n",
+      "<class 'str'>\n"
+     ]
+    }
+   ],
+   "source": [
+    "for m in map(case_of, ['UPPER', 'lower', 'Title', 'CamelCase']):\n",
+    "    print(m)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'Spelling Errors IN something. Whatever; unusual mistakes?'"
+      ]
+     },
+     "execution_count": 28,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "correct_text('Speling Errurs IN somethink. Whutever; unusuel misteakes?')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'Audience says: tumbler ...'"
+      ]
+     },
+     "execution_count": 29,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "correct_text('Audiance sayzs: tumblr ...')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "So far so good.  You can probably think of a dozen ways to make this better.  Here's one: in the text \"three, too, one, blastoff!\" we might want to correct \"too\" with \"two\", even though \"too\" is in the dictionary.  We can do better if we look at a *sequence* of words, not just an individual word one at a time.  But how can we choose the best corrections of a sequence?  The ad-hoc approach worked pretty well for single words, but now we could use some real theory ..."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "(4) Theory: From Counts to Probabilities of Word Sequences\n",
+    "===\n",
+    "\n",
+    "We should be able to compute the probability of a word, $P(w)$.  We do that with the function `pdist`, which takes as input a `Counter` (hat is, a bag of words) and returns a function that acts as a probability distribution over all possible words.  In a probability distribution the probability of each word is between 0 and 1, and the sum of the probabilities is 1."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 40,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def pdist(counter):\n",
+    "    \"Make a probability distribution, given evidence from a Counter.\"\n",
+    "    N = sum(list(counter.values()))\n",
+    "    return lambda x: counter[x]/N\n",
+    "\n",
+    "Pword = pdist(COUNTS)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 42,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "0.0724066643445 the\n",
+      "0.00884296810325 is\n",
+      "0.000821507574969 most\n",
+      "0.00025966153526 common\n",
+      "0.000269613719538 word\n",
+      "0.0199496057578 in\n",
+      "0.000190900989338 english\n"
+     ]
+    }
+   ],
+   "source": [
+    "for w in tokens('\"The\" is most common word in English'):\n",
+    "    print(Pword(w), w)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now, what is the probability of a *sequence* of words?  Use the definition of a joint probability:\n",
+    "\n",
+    "$P(w_1 \\ldots w_n) = P(w_1) \\times P(w_2 \\mid w_1) \\times P(w_3 \\mid w_1 w_2) \\ldots  \\times \\ldots P(w_n \\mid w_1 \\ldots w_{n-1})$\n",
+    "\n",
+    "The *bag of words* model assumes that each word is drawn from the bag *independently* of the others.  This gives us the wrong approximation:\n",
+    "    \n",
+    "$P(w_1 \\ldots w_n) = P(w_1) \\times P(w_2) \\times P(w_3) \\ldots  \\times \\ldots P(w_n)$\n",
+    "\n",
+    "    \n",
+    "<img src=\"http://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/GeorgeEPBox.jpg/200px-GeorgeEPBox.jpg\"> The statistician George Box said that *All models are wrong, but some are useful.*\n",
+    "    \n",
+    "How can we compute $P(w_1 \\ldots w_n)$?  We'll use a different function name, `Pwords`, rather than `P`, and we compute the product of the individual probabilities:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 43,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def Pwords(words):\n",
+    "    \"Probability of words, assuming each word is independent of others.\"\n",
+    "    return product(Pword(w) for w in words)\n",
+    "\n",
+    "def product(nums):\n",
+    "    \"Multiply the numbers together.  (Like `sum`, but with multiplication.)\"\n",
+    "    result = 1\n",
+    "    for x in nums:\n",
+    "        result *= x\n",
+    "    return result"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 44,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "2.9833963328e-11 this is a test\n",
+      "8.63747202302e-16 this is a unusual test\n",
+      "0.0 this is a neverbeforeseen test\n"
+     ]
+    }
+   ],
+   "source": [
+    "tests = ['this is a test', \n",
+    "         'this is a unusual test',\n",
+    "         'this is a neverbeforeseen test']\n",
+    "\n",
+    "for test in tests:\n",
+    "    print(Pwords(tokens(test)), test)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Yikes&mdash;it seems wrong to give a probability of 0 to the last one; it should just be very small.  We'll come back to that later.  The other probabilities seem reasonable."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "(5) Task: Word Segmentation\n",
+    "====\n",
+    "\n",
+    "**Task**: *given a sequence of characters with no spaces separating words, recover the sequence of words.*\n",
+    "   \n",
+    "\n",
+    "Why? Languages with no word delimiters: [不带空格的词](http://translate.google.com/#auto/en/%E4%B8%8D%E5%B8%A6%E7%A9%BA%E6%A0%BC%E7%9A%84%E8%AF%8D)\n",
+    "\n",
+    "In English, sub-genres with no word delimiters ([spelling errors](https://www.google.com/search?q=wordstogether), [URLs](http://speedofart.com)).\n",
+    "\n",
+    "**Approach 1:** Enumerate all candidate segementations and choose the one with highest Pwords\n",
+    "\n",
+    "Problem: how many segmentations are there for an *n*-character text?\n",
+    "\n",
+    "**Approach 2:** Make one segmentation, into a first word and remaining characters.  If we assume words are independent \n",
+    "then we can maximize the probability of the first word adjoined to the best segmentation of the remaining characters.\n",
+    "    \n",
+    "    assert segment('choosespain') == ['choose', 'spain']\n",
+    "\n",
+    "    segment('choosespain') ==\n",
+    "       max(Pwords(['c'] + segment('hoosespain')),\n",
+    "           Pwords(['ch'] + segment('oosespain')),\n",
+    "           Pwords(['cho'] + segment('osespain')),\n",
+    "           Pwords(['choo'] + segment('sespain')),\n",
+    "           ...\n",
+    "           Pwords(['choosespain'] + segment('')))\n",
+    "       \n",
+    "    \n",
+    "       \n",
+    "To make this somewhat efficient, we need to avoid re-computing the segmentations of the remaining characters.  This can be done explicitly by *dynamic programming* or implicitly with *memoization*. Also, we shouldn't consider all possible lengths for the first word; we can impose a maximum length.  What should it be?  A little more than the longest word seen so far."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 45,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def memo(f):\n",
+    "    \"Memoize function f, whose args must all be hashable.\"\n",
+    "    cache = {}\n",
+    "    def fmemo(*args):\n",
+    "        if args not in cache:\n",
+    "            cache[args] = f(*args)\n",
+    "        return cache[args]\n",
+    "    fmemo.cache = cache\n",
+    "    return fmemo"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 46,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "18"
+      ]
+     },
+     "execution_count": 46,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "max(len(w) for w in COUNTS)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 47,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def splits(text, start=0, L=20):\n",
+    "    \"Return a list of all (first, rest) pairs; start <= len(first) <= L.\"\n",
+    "    return [(text[:i], text[i:]) \n",
+    "            for i in range(start, min(len(text), L)+1)]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 49,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "[('', 'word'), ('w', 'ord'), ('wo', 'rd'), ('wor', 'd'), ('word', '')]\n",
+      "[('r', 'eallylongtext'), ('re', 'allylongtext'), ('rea', 'llylongtext'), ('real', 'lylongtext')]\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(splits('word'))\n",
+    "print(splits('reallylongtext', 1, 4))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 50,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "@memo\n",
+    "def segment(text):\n",
+    "    \"Return a list of words that is the most probable segmentation of text.\"\n",
+    "    if not text: \n",
+    "        return []\n",
+    "    else:\n",
+    "        candidates = ([first] + segment(rest) \n",
+    "                      for (first, rest) in splits(text, 1))\n",
+    "        return max(candidates, key=Pwords)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 51,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['choose', 'spain']"
+      ]
+     },
+     "execution_count": 51,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "segment('choosespain')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 52,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['speed', 'of', 'art']"
+      ]
+     },
+     "execution_count": 52,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "segment('speedofart')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 53,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "decl = ('wheninthecourseofhumaneventsitbecomesnecessaryforonepeople' +\n",
+    "        'todissolvethepoliticalbandswhichhaveconnectedthemwithanother' +\n",
+    "        'andtoassumeamongthepowersoftheearththeseparateandequalstation' +\n",
+    "        'towhichthelawsofnatureandofnaturesgodentitlethem')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 54,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['when', 'in', 'the', 'course', 'of', 'human', 'events', 'it', 'becomes', 'necessary', 'for', 'one', 'people', 'to', 'dissolve', 'the', 'political', 'bands', 'which', 'have', 'connected', 'them', 'with', 'another', 'and', 'to', 'assume', 'among', 'the', 'powers', 'of', 'the', 'earth', 'the', 'separate', 'and', 'equal', 'station', 'to', 'which', 'the', 'laws', 'of', 'nature', 'and', 'of', 'natures', 'god', 'entitle', 'them']\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(segment(decl))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 55,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "3.6043381425711275e-141"
+      ]
+     },
+     "execution_count": 55,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "Pwords(segment(decl))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 56,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "1.2991253445993077e-281"
+      ]
+     },
+     "execution_count": 56,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "Pwords(segment(decl * 2))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 57,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.0"
+      ]
+     },
+     "execution_count": 57,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "Pwords(segment(decl * 3))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "That's a problem.  We'll come back to it later."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 58,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['small', 'and', 'insignificant']"
+      ]
+     },
+     "execution_count": 58,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "segment('smallandinsignificant')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 59,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['large', 'and', 'insignificant']"
+      ]
+     },
+     "execution_count": 59,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "segment('largeandinsignificant')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 60,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "4.11141879168e-10\n",
+      "1.06627539199e-11\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(Pwords(['large', 'and', 'insignificant']))\n",
+    "print(Pwords(['large', 'and', 'in', 'significant']))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Summary:\n",
+    "    \n",
+    "- Looks pretty good!\n",
+    "- The bag-of-words assumption is a limitation.\n",
+    "- Recomputing Pwords on each recursive call is somewhat inefficient.\n",
+    "- Numeric underflow for texts longer than 100 or so words; we'll need to use logarithms, or other tricks.\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# (6) Data: Mo' Data, Mo' Better"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Let's move up from millions to *billions and billions* of words.  Once we have that amount of data, we can start to look at two word sequences, without them being too sparse.  I happen to have data files available in the format of `\"word \\t count\"`, and bigram data in the form of `\"word1 word2 \\t count\"`.  Let's arrange to read them in:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 178,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def load_counts(filename, sep='\\t'):\n",
+    "    \"\"\"Return a Counter initialized from key-value pairs, \n",
+    "    one on each line of filename.\"\"\"\n",
+    "    C = Counter()\n",
+    "    for line in open(filename):\n",
+    "        key, count = line.split(sep)\n",
+    "        C[key] = int(count)\n",
+    "    return C"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 180,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "COUNTS1 = load_counts('count_1w.txt')\n",
+    "COUNTS2 = load_counts('count_2w.txt')\n",
+    "\n",
+    "P1w = pdist(COUNTS1)\n",
+    "P2w = pdist(COUNTS2)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 181,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "333333 588.124220187\n",
+      "286358 225.955251755\n"
+     ]
+    }
+   ],
+   "source": [
+    "print len(COUNTS1), sum(COUNTS1.values())/1e9\n",
+    "print len(COUNTS2), sum(COUNTS2.values())/1e9"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 183,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[('of the', 2766332391),\n",
+       " ('in the', 1628795324),\n",
+       " ('to the', 1139248999),\n",
+       " ('on the', 800328815),\n",
+       " ('for the', 692874802),\n",
+       " ('and the', 629726893),\n",
+       " ('to be', 505148997),\n",
+       " ('is a', 476718990),\n",
+       " ('with the', 461331348),\n",
+       " ('from the', 428303219),\n",
+       " ('by the', 417106045),\n",
+       " ('at the', 416201497),\n",
+       " ('of a', 387060526),\n",
+       " ('in a', 364730082),\n",
+       " ('will be', 356175009),\n",
+       " ('that the', 333393891),\n",
+       " ('do not', 326267941),\n",
+       " ('is the', 306482559),\n",
+       " ('to a', 279146624),\n",
+       " ('is not', 276753375),\n",
+       " ('for a', 274112498),\n",
+       " ('with a', 271525283),\n",
+       " ('as a', 270401798),\n",
+       " ('<S> and', 261891475),\n",
+       " ('of this', 258707741),\n",
+       " ('<S> the', 258483382),\n",
+       " ('it is', 245002494),\n",
+       " ('can be', 230215143),\n",
+       " ('If you', 210252670),\n",
+       " ('has been', 196769958)]"
+      ]
+     },
+     "execution_count": 183,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "COUNTS2.most_common(30)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "(7) Theory and Practice: Segmentation With Bigram Data\n",
+    "===\n",
+    "\n",
+    "A less-wrong approximation:\n",
+    "    \n",
+    "$P(w_1 \\ldots w_n) = P(w_1) \\times P(w_2 \\mid w_1) \\times P(w_3 \\mid w_2) \\ldots  \\times \\ldots P(w_n \\mid w_{n-1})$\n",
+    "\n",
+    "This is called the *bigram* model, and is equivalent to taking a text, cutting it up into slips of paper with two words on them, and having multiple bags, and putting each slip into a bag labelled with the first word on the slip.  Then, to generate language, we choose the first word from the original single bag of words, and chose all subsequent words from the bag with the label of the previously-chosen word.\n",
+    "\n",
+    "Let's start by defining the probability of a single discrete event, given evidence stored in a Counter:\n",
+    "\n",
+    "Recall that the less-wrong bigram model approximation to English is:\n",
+    "    \n",
+    "$P(w_1 \\ldots w_n) = P(w_1) \\times P(w_2 \\mid w_1) \\times P(w_3 \\mid w_2) \\ldots  \\times \\ldots P(w_n \\mid w_{n-1})$\n",
+    "\n",
+    "where the conditional probability of a word given the previous word is defined as:\n",
+    "\n",
+    "$P(w_n \\mid w_{n-1}) = P(w_{n-1}w_n) / P(w_{n-1}) $"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 184,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def Pwords2(words, prev='<S>'):\n",
+    "    \"The probability of a sequence of words, using bigram data, given prev word.\"\n",
+    "    return product(cPword(w, (prev if (i == 0) else words[i-1]) )\n",
+    "                   for (i, w) in enumerate(words))\n",
+    "\n",
+    "# Change Pwords to use P1w (the bigger dictionary) instead of Pword\n",
+    "def Pwords(words):\n",
+    "    \"Probability of words, assuming each word is independent of others.\"\n",
+    "    return product(P1w(w) for w in words)\n",
+    "\n",
+    "def cPword(word, prev):\n",
+    "    \"Conditional probability of word, given previous word.\"\n",
+    "    bigram = prev + ' ' + word\n",
+    "    if P2w(bigram) > 0 and P1w(prev) > 0:\n",
+    "        return P2w(bigram) / P1w(prev)\n",
+    "    else: # Average the back-off value and zero.\n",
+    "        return P1w(word) / 2"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 185,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "1.78739820006e-10\n",
+      "6.41367629438e-08\n",
+      "1.18028600367e-11\n"
+     ]
+    }
+   ],
+   "source": [
+    "print Pwords(tokens('this is a test'))\n",
+    "print Pwords2(tokens('this is a test'))\n",
+    "print Pwords2(tokens('is test a this'))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "To make `segment2`, we copy `segment`, and make sure to pass around the previous token, and to evaluate probabilities with `Pwords2` instead of `Pwords`."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 202,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "@memo \n",
+    "def segment2(text, prev='<S>'): \n",
+    "    \"Return best segmentation of text; use bigram data.\" \n",
+    "    if not text: \n",
+    "        return []\n",
+    "    else:\n",
+    "        candidates = ([first] + segment2(rest, first) \n",
+    "                      for (first, rest) in splits(text, 1))\n",
+    "        return max(candidates, key=lambda words: Pwords2(words, prev))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 190,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['choose', 'spain']\n",
+      "['speed', 'of', 'art']\n",
+      "['small', 'and', 'in', 'significant']\n",
+      "['large', 'and', 'in', 'significant']\n"
+     ]
+    }
+   ],
+   "source": [
+    "print segment2('choosespain')\n",
+    "print segment2('speedofart')\n",
+    "print segment2('smallandinsignificant')\n",
+    "print segment2('largeandinsignificant')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 193,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['far', 'out', 'in', 'the', 'uncharted', 'backwaters', 'of', 'the', 'unfashionable', 'end', 'of', 'the', 'western', 'spiral', 'arm', 'of', 'the', 'galaxy', 'lies', 'a', 'small', 'un', 'regarded', 'yellow', 'sun']\n",
+      "['far', 'out', 'in', 'the', 'uncharted', 'backwaters', 'of', 'the', 'unfashionable', 'end', 'of', 'the', 'western', 'spiral', 'arm', 'of', 'the', 'galaxy', 'lies', 'a', 'small', 'un', 'regarded', 'yellow', 'sun']\n"
+     ]
+    }
+   ],
+   "source": [
+    "adams = ('faroutintheunchartedbackwatersoftheunfashionableendofthewesternspiral' +\n",
+    "         'armofthegalaxyliesasmallunregardedyellowsun')\n",
+    "print segment(adams)\n",
+    "print segment2(adams)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 194,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.0"
+      ]
+     },
+     "execution_count": 194,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "P1w('unregarded')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 195,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['a', 'dry', 'bare', 'sandy', 'hole', 'with', 'nothing', 'in', 'it', 'to', 'sitdown', 'on', 'or', 'to', 'eat']\n",
+      "['a', 'dry', 'bare', 'sandy', 'hole', 'with', 'nothing', 'in', 'it', 'to', 'sit', 'down', 'on', 'or', 'to', 'eat']\n"
+     ]
+    }
+   ],
+   "source": [
+    "tolkein = 'adrybaresandyholewithnothinginittositdownonortoeat'\n",
+    "print segment(tolkein)\n",
+    "print segment2(tolkein)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Conclusion? Bigram model is a little better, but not much.  Hundreds of billions of words still not enough. (Why not trillions?) Could be made more efficient."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "(8) Theory: Evaluation\n",
+    "===\n",
+    "\n",
+    "So far, we've got an intuitive feel for how this all works.  But we don't have any solid metrics that quantify the results.  Without metrics, we can't say if we are doing well, nor if a change is an improvement. In general,\n",
+    "when developing a program that relies on data to help make\n",
+    "predictions, it is good practice to divide your data into three sets:\n",
+    "<ol>\n",
+    "  <li> <b>Training set:</b> the data used to create our spelling\n",
+    "  model; this was the <tt>big.txt</tt> file.\n",
+    "  <li> <b>Development set:</b> a set of input/output pairs that we can\n",
+    "  use to rank the performance of our program as we are developing it.\n",
+    "  <li> <b>Test set:</b> another set of input/output pairs that we use\n",
+    "  to rank our program <i>after</i> we are done developing it.  The\n",
+    "  development set can't be used for this purpose&mdash;once the\n",
+    "  programmer has looked at the development test it is tainted, because\n",
+    "  the programmer might modify the program just to pass the development\n",
+    "  test.  That's why we need a separate test set that is only looked at\n",
+    "  after development is done.\n",
+    "</ol>\n",
+    "\n",
+    "For this program, the training data is the word frequency counts, the development set is the examples like `\"choosespain\"` that we have been playing with, and now we need a test set."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 201,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def test_segmenter(segmenter, tests):\n",
+    "    \"Try segmenter on tests; report failures; return fraction correct.\"\n",
+    "    return sum([test_one_segment(segmenter, test) \n",
+    "               for test in tests]), len(tests)\n",
+    "\n",
+    "def test_one_segment(segmenter, test):\n",
+    "    words = tokens(test)\n",
+    "    result = segmenter(cat(words))\n",
+    "    correct = (result == words)\n",
+    "    if not correct:\n",
+    "        print 'expected', words\n",
+    "        print 'got     ', result\n",
+    "    return correct\n",
+    "\n",
+    "proverbs = (\"\"\"A little knowledge is a dangerous thing\n",
+    "  A man who is his own lawyer has a fool for his client\n",
+    "  All work and no play makes Jack a dull boy\n",
+    "  Better to remain silent and be thought a fool that to speak and remove all doubt;\n",
+    "  Do unto others as you would have them do to you\n",
+    "  Early to bed and early to rise, makes a man healthy, wealthy and wise\n",
+    "  Fools rush in where angels fear to tread\n",
+    "  Genius is one percent inspiration, ninety-nine percent perspiration\n",
+    "  If you lie down with dogs, you will get up with fleas\n",
+    "  Lightning never strikes twice in the same place\n",
+    "  Power corrupts; absolute power corrupts absolutely\n",
+    "  Here today, gone tomorrow\n",
+    "  See no evil, hear no evil, speak no evil\n",
+    "  Sticks and stones may break my bones, but words will never hurt me\n",
+    "  Take care of the pence and the pounds will take care of themselves\n",
+    "  Take care of the sense and the sounds will take care of themselves\n",
+    "  The bigger they are, the harder they fall\n",
+    "  The grass is always greener on the other side of the fence\n",
+    "  The more things change, the more they stay the same\n",
+    "  Those who do not learn from history are doomed to repeat it\"\"\"\n",
+    "  .splitlines())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 203,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "expected ['sticks', 'and', 'stones', 'may', 'break', 'my', 'bones', 'but', 'words', 'will', 'never', 'hurt', 'me']\n",
+      "got      ['stick', 'sandstones', 'may', 'break', 'my', 'bones', 'but', 'words', 'will', 'never', 'hurt', 'me']\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(19, 20)"
+      ]
+     },
+     "execution_count": 203,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "test_segmenter(segment, proverbs)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 204,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(20, 20)"
+      ]
+     },
+     "execution_count": 204,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "test_segmenter(segment2, proverbs)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "This confirms that both segmenters are very good, and that `segment2` is slightly better. There is much more that can be done in terms of the variety of tests, and in measuring statistical significance."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "(9) Theory and Practice: Smoothing\n",
+    "======\n",
+    "\n",
+    "Let's go back to a test we did before, and add some more test cases:\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 205,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "1.78739820006e-10 this is a test\n",
+      "3.78675425278e-15 this is a unusual test\n",
+      "1.31179474235e-16 this is a nongovernmental test\n",
+      "0.0 this is a neverbeforeseen test\n",
+      "0.0 this is a zqbhjhsyefvvjqc test\n"
+     ]
+    }
+   ],
+   "source": [
+    "tests = ['this is a test', \n",
+    "         'this is a unusual test',\n",
+    "         'this is a nongovernmental test',\n",
+    "         'this is a neverbeforeseen test',\n",
+    "         'this is a zqbhjhsyefvvjqc test']\n",
+    "\n",
+    "for test in tests:\n",
+    "    print Pwords(tokens(test)), test"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The issue here is the finality of a probability of zero.  Out of the three 15-letter words, it turns out that \"nongovernmental\" is in the dictionary, but if it hadn't been, if somehow our corpus of words had missed it, then the probability of that whole phrase would have been zero.  It seems that is too strict; there must be some \"real\" words that are not in our dictionary, so we shouldn't give them probability zero.  There is also a question of likelyhood of being a \"real\" word.  It does seem that \"neverbeforeseen\" is more English-like than \"zqbhjhsyefvvjqc\", and so perhaps should have a higher probability.\n",
+    "\n",
+    "We can address this by assigning a non-zero probability to words that are not in the dictionary.  This is even more important when it comes to multi-word phrases (such as bigrams), because it is more likely that a legitimate one will appear that has not been observed before.\n",
+    "\n",
+    "We can think of our model as being overly spiky; it has a spike of probability mass wherever a word or phrase occurs in the corpus.  What we would like to do is *smooth* over those spikes so that we get a model that does not depend on the details of our corpus. The process of \"fixing\" the model is called *smoothing*.\n",
+    "\n",
+    "For example, Laplace was asked what's the probability of the sun rising tomorrow.  From data that it has risen $n/n$ times for the last *n* days, the maximum liklihood estimator is 1.  But Laplace wanted to balance the data with the possibility that tomorrow, either it will rise or it won't, so he came up with $(n + 1) / (n + 2)$.\n",
+    "\n",
+    "\n",
+    "<img src=\"http://upload.wikimedia.org/wikipedia/commons/thumb/e/e3/Pierre-Simon_Laplace.jpg/220px-Pierre-Simon_Laplace.jpg\" height=150 width=110> \n",
+    "&nbsp;\n",
+    "<img src=\"http://www.hdwallpapers.in/walls/notre_dame_at_sunrise_paris_france-normal.jpg\" width=200 height=150>\n",
+    "<br><i>What we know is little, and what we are ignorant of is immense.<i><br>&mdash; Pierre Simon Laplace, 1749-1827"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 207,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def pdist_additive_smoothed(counter, c=1):\n",
+    "    \"\"\"The probability of word, given evidence from the counter.\n",
+    "    Add c to the count for each item, plus the 'unknown' item.\"\"\"\n",
+    "    N = sum(counter.values())          # Amount of evidence\n",
+    "    Nplus = N + c * (len(counter) + 1) # Evidence plus fake observations\n",
+    "    return lambda word: (counter[word] + c) / Nplus \n",
+    "\n",
+    "P1w = pdist_additive_smoothed(COUNTS1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 208,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "1.7003201005861308e-12"
+      ]
+     },
+     "execution_count": 208,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "P1w('neverbeforeseen')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "But now there's a problem ... we now have previously-unseen words with non-zero probabilities.  And maybe 10<sup>-12</sup> is about right for words that are observed in text: that is, if I'm *reading* a new text, the probability that the next word is unknown might be around 10<sup>-12</sup>.  But if I'm *manufacturing* 20-letter sequences at random, the probability that one will be a word is much, much lower than 10<sup>-12</sup>.  \n",
+    "\n",
+    "Look what happens:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 209,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['thisisatestofsegment', 'ationofalongsequence', 'of', 'words']"
+      ]
+     },
+     "execution_count": 209,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "segment('thisisatestofsegmentationofalongsequenceofwords')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "There are two problems:\n",
+    "    \n",
+    "First, we don't have a clear model of the unknown words.  We just say \"unknown\" but\n",
+    "we don't distinguish likely unknown from unlikely unknown.  For example, is a 8-character unknown more likely than a 20-character unknown?\n",
+    "\n",
+    "Second, we don't take into account evidence from *parts* of the unknown.  For example, \n",
+    "\"unglobulate\" versus \"zxfkogultae\".\n",
+    "\n",
+    "For our next approach, *Good - Turing* smoothing re-estimates the probability of zero-count words, based on the probability of one-count words (and can also re-estimate for higher-number counts, but that is less interesting).\n",
+    "\n",
+    "<img src=\"http://upload.wikimedia.org/wikipedia/en/b/b4/I._J._Good.jpg\">\n",
+    "<img src=\"http://upload.wikimedia.org/wikipedia/en/thumb/c/c8/Alan_Turing_photo.jpg/200px-Alan_Turing_photo.jpg\" height=144>\n",
+    "<br><i>I. J. Good (1916 - 2009) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; Alan Turing (1812 - 1954)</i>\n",
+    "\n",
+    "So, how many one-count words are there in `COUNTS`?  (There aren't any in `COUNTS1`.)  And what are the word lengths of them?  Let's find out:\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 225,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[(7, 1357),\n",
+       " (8, 1356),\n",
+       " (9, 1176),\n",
+       " (6, 1113),\n",
+       " (10, 938),\n",
+       " (5, 747),\n",
+       " (11, 627),\n",
+       " (12, 398),\n",
+       " (4, 367),\n",
+       " (13, 215),\n",
+       " (3, 161),\n",
+       " (14, 112),\n",
+       " (2, 51),\n",
+       " (15, 37),\n",
+       " (16, 10),\n",
+       " (17, 7)]"
+      ]
+     },
+     "execution_count": 225,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "singletons = (w for w in COUNTS if COUNTS[w] == 1)\n",
+    "\n",
+    "lengths = map(len, singletons)\n",
+    "\n",
+    "Counter(lengths).most_common()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 213,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "0.0012278198461651215"
+      ]
+     },
+     "execution_count": 213,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "1357 / sum(COUNTS.values())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 229,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "image/png": "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\n",
+      "text/plain": [
+       "<matplotlib.figure.Figure at 0x10f34ef50>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "hist(lengths, bins=len(set(lengths)));"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 230,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def pdist_good_turing_hack(counter, onecounter, base=1/26., prior=1e-8):\n",
+    "    \"\"\"The probability of word, given evidence from the counter.\n",
+    "    For unknown words, look at the one-counts from onecounter, based on length.\n",
+    "    This gets ideas from Good-Turing, but doesn't implement all of it.\n",
+    "    prior is an additional factor to make unknowns less likely.\n",
+    "    base is how much we attenuate probability for each letter beyond longest.\"\"\"\n",
+    "    N = sum(counter.values())\n",
+    "    N2 = sum(onecounter.values())\n",
+    "    lengths = map(len, [w for w in onecounter if onecounter[w] == 1])\n",
+    "    ones = Counter(lengths)\n",
+    "    longest = max(ones)\n",
+    "    return (lambda word: \n",
+    "            counter[word] / N if (word in counter) \n",
+    "            else prior * (ones[len(word)] / N2 or \n",
+    "                          ones[longest] / N2 * base ** (len(word)-longest)))\n",
+    "\n",
+    "# Redefine P1w\n",
+    "P1w = pdist_good_turing_hack(COUNTS1, COUNTS)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 231,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['this',\n",
+       " 'is',\n",
+       " 'a',\n",
+       " 'test',\n",
+       " 'of',\n",
+       " 'segmentation',\n",
+       " 'of',\n",
+       " 'a',\n",
+       " 'very',\n",
+       " 'long',\n",
+       " 'sequence',\n",
+       " 'of',\n",
+       " 'words']"
+      ]
+     },
+     "execution_count": 231,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "segment.cache.clear()\n",
+    "segment('thisisatestofsegmentationofaverylongsequenceofwords')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "That was somewhat unsatisfactory.  We really had to crank up the prior, specifically because the process of running `segment` generates so many non-word candidates (and also because there will be fewer unknowns with respect to the billion-word `WORDS1` than with respect to the million-word `WORDS`).  It would be better to separate out the prior from the word distribution, so that the same distribution could be used for multiple tasks, not just for this one.\n",
+    "\n",
+    "Now let's think for a short while about smoothing **bigram** counts.  Specifically, what if we haven't seen a bigram sequence, but we've seen both words individually?  For example, to evaluate P(\"Greenland\") in the phrase \"turn left at Greenland\", we might have three pieces of evidence:\n",
+    "\n",
+    "    P(\"Greenland\")\n",
+    "    P(\"Greenland\" | \"at\")\n",
+    "    P(\"Greenland\" | \"left\", \"at\")\n",
+    "    \n",
+    "Presumably, the first would have a relatively large count, and thus large reliability, while the second and third would have decreasing counts and reliability.  With *interpolation smoothing* we combine all three pieces of evidence, with a linear combination:\n",
+    "    \n",
+    "$P(w_3 \\mid w_1w_2) = c_1 P(w_3) + c_2 P(w_3 \\mid w_2) + c_3 P(w_3 \\mid w_1w_2)$\n",
+    "\n",
+    "How do we choose $c_1, c_2, c_3$?  By experiment: train on training data, maximize $c$ values on development data, then evaluate on test data.\n",
+    "    \n",
+    "However, when we do this, we are saying, with probability $c_1$, that a word can appear anywhere, regardless of previous words.  But some words are more free to do that than other words.  Consider two words with similar probability:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 232,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "7.73314623661e-05\n",
+      "7.72494966889e-05\n"
+     ]
+    }
+   ],
+   "source": [
+    "print P1w('francisco')\n",
+    "print P1w('individuals')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "They have similar unigram probabilities but differ in their freedom to be the second word of a bigram:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 234,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['San francisco', 'san francisco']\n"
+     ]
+    }
+   ],
+   "source": [
+    "print [bigram for bigram in COUNTS2 if bigram.endswith('francisco')]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 235,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['are individuals', 'other individuals', 'on individuals', 'infected individuals', 'in individuals', 'where individuals', 'or individuals', 'which individuals', 'to individuals', 'both individuals', 'help individuals', 'more individuals', 'interested individuals', 'from individuals', '<S> individuals', 'income individuals', 'these individuals', 'about individuals', 'the individuals', 'among individuals', 'some individuals', 'those individuals', 'by individuals', 'minded individuals', 'These individuals', 'qualified individuals', 'certain individuals', 'different individuals', 'For individuals', 'few individuals', 'and individuals', 'two individuals', 'for individuals', 'between individuals', 'affected individuals', 'healthy individuals', 'private individuals', 'with individuals', 'following individuals', 'as individuals', 'such individuals', 'that individuals', 'all individuals', 'of individuals', 'many individuals']\n"
+     ]
+    }
+   ],
+   "source": [
+    "print [bigram for bigram in COUNTS2 if bigram.endswith('individuals')]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Intuitively, words that appear in many bigrams before are more likely to appear in a new, previously unseen bigram. In *Kneser-Ney* smoothing (Reinhard Kneser, Hermann Ney) we multiply the bigram counts by this ratio.  But I won't implement that here, because The Count never covered it.\n",
+    "\n",
+    "(10) One More Task: Secret Codes\n",
+    "===\n",
+    "\n",
+    "Let's tackle one more task: decoding secret codes.  We'll start with the simplest of codes, a rotation cipher, sometimes called a shift cipher or a Caesar cipher (because this was state-of-the-art crypotgraphy in 100 BC).  First, a method to encode:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 236,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def rot(msg, n=13): \n",
+    "    \"Encode a message with a rotation (Caesar) cipher.\" \n",
+    "    return encode(msg, alphabet[n:]+alphabet[:n])\n",
+    "\n",
+    "def encode(msg, key): \n",
+    "    \"Encode a message with a substitution cipher.\" \n",
+    "    table = string.maketrans(upperlower(alphabet), upperlower(key))\n",
+    "    return msg.translate(table) \n",
+    "\n",
+    "def upperlower(text): return text.upper() + text.lower()  "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 237,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'Uijt jt b tfdsfu nfttbhf.'"
+      ]
+     },
+     "execution_count": 237,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "rot('This is a secret message.', 1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 238,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'Guvf vf n frperg zrffntr.'"
+      ]
+     },
+     "execution_count": 238,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "rot('This is a secret message.')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 239,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "'This is a secret message.'"
+      ]
+     },
+     "execution_count": 239,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "rot(rot('This is a secret message.'))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now decoding is easy: try all 26 candidates, and find the one with the maximum Pwords:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 240,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def decode_rot(secret):\n",
+    "    \"Decode a secret message that has been encoded with a rotation cipher.\"\n",
+    "    candidates = [rot(secret, i) for i in range(len(alphabet))]\n",
+    "    return max(candidates, key=lambda msg: Pwords(tokens(msg)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 249,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "nyfbefnjkyvrejnvi\n",
+      "['who', 'knows', 'the', 'answer']\n"
+     ]
+    }
+   ],
+   "source": [
+    "msg = 'Who knows the answer?'\n",
+    "secret = rot(msg, 17)\n",
+    "\n",
+    "print(secret)\n",
+    "print(decode_rot(secret))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Let's make it a tiny bit harder.  When the secret message contains separate words, it is too easy to decode by guessing that the one-letter words are most likely \"I\" or \"a\".  So what if the encode routine mushed all the letters together:"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 244,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def encode(msg, key): \n",
+    "    \"Encode a message with a substitution cipher; remove non-letters.\" \n",
+    "    msg = cat(tokens(msg))  ## Change here\n",
+    "    table = string.maketrans(upperlower(alphabet), upperlower(key))\n",
+    "    return msg.translate(table) "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Now we can decode by segmenting.  We change candidates to be a list of segmentations, and still choose the candidate with the best Pwords: "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 245,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [],
+   "source": [
+    "def decode_rot(secret):\n",
+    "    \"\"\"Decode a secret message that has been encoded with a rotation cipher,\n",
+    "    and which has had all the non-letters squeezed out.\"\"\"\n",
+    "    candidates = [segment(rot(secret, i)) for i in range(len(alphabet))]\n",
+    "    return max(candidates, key=lambda msg: Pwords(msg))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 247,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "pahdghplmaxtglpxkmablmbfxtgrhgxunxeexk\n",
+      "['who', 'knows', 'the', 'answer', 'this', 'time', 'anyone', 'bueller']\n"
+     ]
+    }
+   ],
+   "source": [
+    "msg = 'Who knows the answer this time? Anyone? Bueller?'\n",
+    "secret = rot(msg, 19)\n",
+    "\n",
+    "print(secret)\n",
+    "print(decode_rot(secret))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 248,
+   "metadata": {
+    "collapsed": false
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "['pahdghplmaxtglpxkma', 'blmbfxtgrhgxunxeexk'] 8.7783378348e-33\n",
+      "['qbiehiqmnbyuhmqylnb', 'cmncgyuhsihyvoyffyl'] 8.7783378348e-33\n",
+      "['rcjfijrnoczvinrzmoc', 'dnodhzvitjizwpzggzm'] 8.7783378348e-33\n",
+      "['sdkgjksopdawjosan', 'pdeopeiawjukjaxqahh', 'an'] 1.53192669415e-32\n",
+      "['tel', 'hkltpqebxkptboqef', 'pqfjbxkvlkbyrbiibo'] 1.59574951877e-32\n",
+      "['ufmilmuqrfcylqucprf', 'gqrgkcylwmlczscjjcp'] 8.7783378348e-33\n",
+      "['vgnjmnvrsgdzmrvdqsg', 'hrshldzmxnmdatdkkdq'] 8.7783378348e-33\n",
+      "['who', 'knows', 'the', 'answer', 'this', 'time', 'anyone', 'bueller'] 7.18422540159e-29\n",
+      "['xiplopxtuifbotxfsui', 'jtujnfbozpofcvfmmfs'] 8.7783378348e-33\n",
+      "['yjqmpqyuvjgcpuygtvj', 'kuvkogcpaqpgdwgnngt'] 8.7783378348e-33\n",
+      "['zkrnqrzvwkhdqvzhuwk', 'lvwlphdqbrqhexhoohu'] 8.7783378348e-33\n",
+      "['also', 'rsawxlierwaivxlmw', 'xmqiercsrifyippiv'] 4.20728492071e-30\n",
+      "['bmtpstbxymjfsxbjwym', 'nxynrjfsdtsjgzjqqjw'] 8.7783378348e-33\n",
+      "['cnuqtucyznkgtyckxz', 'no', 'yzoskgteutkhakrrkx'] 9.4554362126e-33\n",
+      "['do', 'vruvdzaolhuzdlyao', 'pzaptlhufvuliblssly'] 9.5930573844e-33\n",
+      "['epwsvweabpmivaemzbp', 'qabqumivgwvmjcmttmz'] 8.7783378348e-33\n",
+      "['fqxtwxfbcqnjwbfnacq', 'rbcrvnjwhxwnkdnuuna'] 8.7783378348e-33\n",
+      "['gryuxygcdrokxcgobdr', 'scdswokxiyxoleovvob'] 8.7783378348e-33\n",
+      "['hszvyzhdesplydhpc', 'est', 'detxplyjzypmfpwwpc'] 1.52450959071e-32\n",
+      "['it', 'awzaieftqmzeiqdft', 'uefuyqmzkazqngqxxqd'] 2.83847421472e-32\n",
+      "['jubxabjfgurnafjregu', 'vfgvzrnalbarohryyre'] 8.7783378348e-33\n",
+      "['kvcybckghvsobgksfhv', 'wghwasobmcbspiszzsf'] 8.7783378348e-33\n",
+      "['lwdzcdlhiwtpchltgiw', 'xhixbtpcndctqjtaatg'] 8.7783378348e-33\n",
+      "['mxeademijxuqdimuhjx', 'yijycuqdoedurkubbuh'] 8.7783378348e-33\n",
+      "['nyfbefnjkyvrejnviky', 'zjkzdvrepfevslvccvi'] 8.7783378348e-33\n",
+      "['ozgcfgoklzwsfkowjlz', 'aklaewsfqgfwtmwddwj'] 8.7783378348e-33\n"
+     ]
+    }
+   ],
+   "source": [
+    "candidates = [segment(rot(secret, i)) for i in range(len(alphabet))]\n",
+    "\n",
+    "for c in candidates:\n",
+    "    print c, Pwords(c)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "What about a general substitution cipher?  The problem is that there are 26! substitution ciphers, and we can't enumerate all of them.  We would need to search through this space.  Initially make some guess at a substitution, then swap two letters; if that looks better keep going, if not try something else.  This approach solves most substitution cipher problems, although it can take a few minutes on a message of length 100 words or so.\n",
+    "\n",
+    "(∞ and beyond) Where To Go Next\n",
+    "===\n",
+    "\n",
+    "What to do next?  Here are some options:\n",
+    "    \n",
+    "- **Spelling correction**: Use bigram or trigram context; make a model of spelling errors/edit distance; go beyond edit distance 2; make it more efficient\n",
+    "- **Evaluation**: Make a serious test suite; search for best parameters (e.g. $c_1, c_2, c_3$)\n",
+    "- **Smoothing**: Implement Kneser-Ney and/or Interpolation; do letter *n*-gram-based smoothing\n",
+    "- **Secret Codes**: Implement a search over substitution ciphers\n",
+    "- **Classification**: Given a corpus of texts, each with a classification label, write a classifier that will take a new text and return a label.  Examples: spam/no-spam; favorable/unfavorable; what author am I most like; reading level.\n",
+    "- **Clustering**: Group data by similarity.  Find synonyms/related words.\n",
+    "- **Parsing**: Representing nested structures rather than linear sequences of words.  relations between parts of the structure.  Implicit missing bits.  Inducing a grammar.\n",
+    "- **Meaning**: What semantic relations are meant by the syntactic relations?\n",
+    "- **Translation**: Using examples to transform one language into another.\n",
+    "- **Question Answering**: Using examples to transfer a question into an answer, either by retrieving a passage, or by synthesizing one.\n",
+    "- **Speech**: Dealing with analog audio signals rather than discrete sequences of characters."
+   ]
+  }
+ ],
+ "metadata": {
+  "anaconda-cloud": {},
+  "kernelspec": {
+   "display_name": "Python [default]",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.5.2"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 0
+}

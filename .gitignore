@@ -1,0 +1,9 @@
+.DS_Store
+**/.DS_Store
+.ipynb_checkpoints/
+.~lock*
+~*.pptx
+
+videos/
+*.mp4
+*.screenflow
